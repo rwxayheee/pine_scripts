@@ -95,7 +95,7 @@ bearDiv = CciSignificant and priceHigh1 > priceHigh2 and cciHigh1 < cciHigh2 and
 bullDiv = CciSignificant and priceLow1 < priceLow2 and cciLow1 > cciLow2 and cciTurningUp
 
 
-// [ayhe1768] Cooldown Logic: Suppress Repeated Signals of the Same Type 冷却机制：抑制相同警报的重复触发
+// [ayhe1768] Cooldown Logic: Suppress Repeated Signals of the Same Type 冷却机制：在一定时间内，抑制相同警报的重复触发
 // === Settings ===
 cooldownBars = input.int(3, minval=1, title="Cooldown Period (bars)") // number of bars to wait before allowing the same signal to trigger again
 
@@ -125,7 +125,7 @@ if bullCooldown > 0
     bullCooldown -= 1
 
 
-// [ayhe1768] Detect, Label and Set Alert for Price vs CCI Divergence 对价格-CCI的背离进行检测， 标记和设置警报k
+// [ayhe1768] Detect, Label and Set Alert for Price vs CCI Divergence 对价格-CCI的背离进行检测， 标记和设置警报
 // Create event series for divergence markers on transformed CCI
 bearPoints = newBearDiv ? cciInPriceSpace : na
 bullPoints = newBullDiv ? cciInPriceSpace : na
