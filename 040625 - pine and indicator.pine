@@ -1,0 +1,143 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © ayhe1768
+
+//@version=6
+indicator(title="Commodity Channel Index", shorttitle="CCI", format=format.price, precision=2, timeframe="", timeframe_gaps=true, overlay=true)
+length = input.int(20, minval=1)
+src = input(hlc3, title="Source")
+ma = ta.sma(src, length)
+cci = (src - ma) / (0.015 * ta.dev(src, length))
+
+// [ayhe1768] Hide the original CCI plot 隐藏原有的CCI曲线
+// plot(cci, "CCI", color=#2962FF)
+// band1 = hline(100, "Upper Band", color=#787B86, linestyle=hline.style_dashed)
+// hline(0, "Middle Band", color=color.new(#787B86, 50))
+// band0 = hline(-100, "Lower Band", color=#787B86, linestyle=hline.style_dashed)
+// fill(band1, band0, color=color.rgb(33, 150, 243, 90), title="Background")
+
+// Smoothing MA inputs
+GRP = "Smoothing"
+TT_BB = "Only applies when 'SMA + Bollinger Bands' is selected. Determines the distance between the SMA and the bands."
+maTypeInput = input.string("SMA", "Type", options = ["None", "SMA", "SMA + Bollinger Bands", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group = GRP, display = display.data_window)
+maLengthInput = input.int(14, "Length", group = GRP, display = display.data_window)
+bbMultInput = input.float(2.0, "BB StdDev", minval = 0.001, maxval = 50, step = 0.5, tooltip = TT_BB, group = GRP, display = display.data_window)
+var enableMA = maTypeInput != "None"
+var isBB = maTypeInput == "SMA + Bollinger Bands"
+
+// Smoothing MA Calculation
+ma(source, length, MAtype) =>
+    switch MAtype
+        "SMA"                   => ta.sma(source, length)
+        "SMA + Bollinger Bands" => ta.sma(source, length)
+        "EMA"                   => ta.ema(source, length)
+        "SMMA (RMA)"            => ta.rma(source, length)
+        "WMA"                   => ta.wma(source, length)
+        "VWMA"                  => ta.vwma(source, length)
+
+// Smoothing MA plots
+smoothingMA = enableMA ? ma(cci, maLengthInput, maTypeInput) : na
+smoothingStDev = isBB ? ta.stdev(cci, maLengthInput) * bbMultInput : na
+
+// [ayhe1768] Hide the smoothed CCI plot 隐藏平滑后的CCI曲线（未使用）
+// plot(smoothingMA, "CCI-based MA", color=color.yellow, display = enableMA ? display.all : display.none, editable = enableMA)
+
+// [ayhe1768] Create a transformed CCI overlaying the price space (并非必须，只是为了更好的显示CCI随价格的变化）将CCI按一定比例缩放到价格空间
+// [ayhe1768] Upper and lower bands for CCI = 100 and -100
+multiplier = input.float(3.0, minval=0.1, title="CCI Price Space Multiplier") // multiplier for CCI bands
+basis = ta.sma(src, length)
+dev = ta.dev(src, length)
+upperBand = basis + 1.5 * dev * multiplier // corresponds to CCI = +100
+lowerBand = basis - 1.5 * dev * multiplier // corresponds to CCI = -100
+fill(plot1=plot(upperBand, "Upper Band", color=color.gray),
+     plot2=plot(lowerBand, "Lower Band", color=color.gray),
+     color=color.new(color.yellow, 90),
+     title="CCI Band Fill")
+// [ayhe1768] Center of CCI, which is chosen to be SMA of price
+plot(basis, "Price SMA", color=color.gray, style=plot.style_stepline, linewidth=2)
+// [ayhe1768] Transformed CCI in price space
+cciInPriceSpace = basis + cci * 0.015 * dev * multiplier
+plot(cciInPriceSpace, "CCI (in Price Space)", color=color.orange, force_overlay = true)
+
+// Bollinger Bands 
+bbUpperBand = plot(smoothingMA + smoothingStDev, title = "Upper Bollinger Band", color=color.green, display = isBB ? display.all : display.none, editable = isBB)
+bbLowerBand = plot(smoothingMA - smoothingStDev, title = "Lower Bollinger Band", color=color.green, display = isBB ? display.all : display.none, editable = isBB)
+fill(bbUpperBand, bbLowerBand, color= isBB ? color.new(color.green, 90) : na, title="Bollinger Bands Background Fill", display = isBB ? display.all : display.none, editable = isBB)
+
+
+// [ayhe1768] Detection Logic: Delayed Lookback 检测逻辑：延迟回溯
+// === Settings ===
+lag = length // let delay lookup be the same as CCI length
+// optionally, set minimum price and CCI differences to filter out weak signals
+minCciDiff = input.float(10.0, title="Min CCI Diff")
+// minPriceDiff = input.float(0.5, title="Min Price Diff")
+
+// === Metrics ===
+// Highs for bearish divergence
+priceHigh1 = ta.highest(high, lag)
+priceHigh2 = ta.highest(high, lag)[lag]
+cciHigh1 = ta.highest(cci, lag)
+cciHigh2 = ta.highest(cci, lag)[lag]
+// Lows for bullish divergence
+priceLow1 = ta.lowest(low, lag)
+priceLow2 = ta.lowest(low, lag)[lag]
+cciLow1 = ta.lowest(cci, lag)
+cciLow2 = ta.lowest(cci, lag)[lag]
+// Cci trend significant? 
+CciSignificant = (cciHigh1 - cciHigh2) > minCciDiff or (cciLow2 - cciLow1) > minCciDiff
+// Momentum Turning Confirmation
+cciTurningDown = cci < cci[1]
+cciTurningUp = cci > cci[1]
+
+// === Divergence Conditions ===
+// 🐻 Bearish Divergence: Significant CCi trend, Price HH, CCI LH, and CCI turning down
+bearDiv = CciSignificant and priceHigh1 > priceHigh2 and cciHigh1 < cciHigh2 and cciTurningDown
+// 🐮 Bullish Divergence: Significant CCi trend, Price LL, CCI HL, and CCI turning up
+bullDiv = CciSignificant and priceLow1 < priceLow2 and cciLow1 > cciLow2 and cciTurningUp
+
+
+// [ayhe1768] Cooldown Logic: Suppress Repeated Signals of the Same Type 冷却机制：抑制相同警报的重复触发
+// === Settings ===
+cooldownBars = input.int(3, minval=1, title="Cooldown Period (bars)") // number of bars to wait before allowing the same signal to trigger again
+
+// === Process ===
+// Cooldown states
+var int bearCooldown = 0
+var int bullCooldown = 0
+// Filtered signals
+newBearDiv = false
+newBullDiv = false
+// 🐻 Bear trigger logic
+if bearDiv and bearCooldown == 0
+    newBearDiv := true
+    bearCooldown := cooldownBars
+    // Reset bull cooldown (allow switching)
+    bullCooldown := 0
+// 🐮 Bull trigger logic
+if bullDiv and bullCooldown == 0
+    newBullDiv := true
+    bullCooldown := cooldownBars
+    // Reset bear cooldown (allow switching)
+    bearCooldown := 0
+// Count-down
+if bearCooldown > 0
+    bearCooldown -= 1
+if bullCooldown > 0
+    bullCooldown -= 1
+
+
+// [ayhe1768] Detect, Label and Set Alert for Price vs CCI Divergence 对价格-CCI的背离进行检测， 标记和设置警报k
+// Create event series for divergence markers on transformed CCI
+bearPoints = newBearDiv ? cciInPriceSpace : na
+bullPoints = newBullDiv ? cciInPriceSpace : na
+
+// Plot bearish and bullish divergence markers on transformed CC
+plot(bearPoints, color=color.green, style=plot.style_circles, linewidth=3)
+plot(bullPoints, color=color.red, style=plot.style_circles, linewidth=3)
+
+// Label bearish and bullish divergence on price
+plotshape(newBearDiv, title="🐻 Bearish Divergence", location=location.belowbar, style=shape.labelup, color=color.green, text="🐻", force_overlay = true)
+plotshape(newBullDiv, title="🐮 Bullish Divergence", location=location.abovebar, style=shape.labeldown, color=color.red, text="🐮", force_overlay = true)
+
+// Define alert conditions
+alertcondition(newBearDiv, title="Bearish Divergence", message="🐻 Bearish Divergence detected!")
+alertcondition(newBullDiv, title="Bullish Divergence", message="🐮 Bullish Divergence detected!")
